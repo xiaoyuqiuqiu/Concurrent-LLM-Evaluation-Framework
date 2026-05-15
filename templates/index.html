@@ -1,0 +1,2204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM 并发测试工具</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg-primary: #0b1120;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1e293b;
+  --bg-input: #0f172a;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent: #6366f1;
+  --accent-hover: #818cf8;
+  --accent-glow: rgba(99, 102, 241, 0.15);
+  --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.1);
+  --error: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.1);
+  --warning: #f59e0b;
+  --border: #1e293b;
+  --border-light: #334155;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.header {
+  height: 52px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  flex-shrink: 0;
+  gap: 10px;
+}
+.header-logo {
+  width: 28px; height: 28px;
+  background: linear-gradient(135deg, var(--accent), #a855f7);
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+}
+.header-title { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+.header-badge {
+  font-size: 10px; font-weight: 500;
+  background: var(--accent-glow); color: var(--accent-hover);
+  padding: 2px 8px; border-radius: 99px;
+}
+.header-nav { display: flex; gap: 4px; margin: 0 16px; flex: 1; }
+.nav-tab {
+  background: transparent; border: none;
+  color: var(--text-muted); font-size: 13px; font-weight: 500;
+  padding: 6px 16px; border-radius: var(--radius-sm);
+  cursor: pointer; font-family: inherit;
+  transition: all 0.2s;
+}
+.nav-tab:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.nav-tab.active { color: var(--accent-hover); background: var(--accent-glow); }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.status-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted);
+  transition: background 0.3s;
+}
+.status-dot.running { background: var(--warning); animation: pulse 1.2s ease-in-out infinite; }
+.status-dot.done { background: var(--success); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ── Main Layout ─────────────────────────────────────────────────────────── */
+.main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Left Panel ──────────────────────────────────────────────────────────── */
+.left-panel {
+  width: 320px; min-width: 320px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  padding: 20px;
+  display: flex; flex-direction: column; gap: 18px;
+  overflow-y: auto;
+}
+.panel-section { display: flex; flex-direction: column; gap: 7px; }
+.panel-label {
+  font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-muted);
+}
+select, input[type="text"], input[type="password"], input[type="number"], textarea {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 9px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+select:focus, input:focus, textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+textarea { resize: vertical; min-height: 70px; font-size: 13px; line-height: 1.5; }
+
+.concurrency-row {
+  display: flex; align-items: center; gap: 12px;
+}
+.concurrency-row input[type="range"] {
+  flex: 1; accent-color: var(--accent); height: 6px;
+}
+.concurrency-value {
+  font-size: 18px; font-weight: 700; color: var(--accent-hover);
+  min-width: 36px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn {
+  padding: 10px 20px; border: none; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.2s; font-family: inherit;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.btn-run {
+  background: var(--accent); color: #fff;
+  flex: 1;
+}
+.btn-run:hover:not(:disabled) { background: var(--accent-hover); box-shadow: 0 0 20px var(--accent-glow); }
+.btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-stop {
+  background: transparent; color: var(--error);
+  border: 1px solid var(--error);
+}
+.btn-stop:hover { background: var(--error-bg); }
+.btn-stop.hidden { display: none; }
+.btn-manage {
+  background: var(--bg-tertiary); color: var(--text-secondary);
+  font-size: 12px; padding: 6px 12px;
+}
+.btn-manage:hover { color: var(--text-primary); background: var(--border-light); }
+
+.progress-wrap { margin-top: 4px; }
+.progress-bar {
+  height: 6px; background: var(--bg-tertiary); border-radius: 3px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%; background: linear-gradient(90deg, var(--accent), #a855f7);
+  border-radius: 3px; width: 0%;
+  transition: width 0.3s ease;
+}
+.progress-text { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+/* ── History ──────────────────────────────────────────────────────────────── */
+.history-section {
+  margin-top: 4px;
+  display: flex; flex-direction: column; gap: 4px;
+  overflow-y: auto; max-height: 200px;
+}
+.history-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; background: var(--bg-tertiary);
+  border-radius: var(--radius-sm); font-size: 11px;
+  cursor: pointer; border: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+.history-item:hover { border-color: var(--border-light); }
+.history-seq {
+  color: var(--accent-hover); font-weight: 600; min-width: 22px;
+  font-variant-numeric: tabular-nums;
+}
+.history-time { color: var(--text-muted); min-width: 42px; }
+.history-summary { flex: 1; color: var(--text-secondary); }
+.history-summary span { color: var(--text-primary); font-weight: 500; }
+.history-delete {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 14px; padding: 0 4px; line-height: 1;
+}
+.history-delete:hover { color: var(--error); }
+
+/* ── Right Panel ─────────────────────────────────────────────────────────── */
+.right-panel {
+  flex: 1;
+  padding: 20px 24px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.empty-state {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: var(--text-muted); gap: 8px;
+}
+.empty-state-icon { font-size: 40px; opacity: 0.4; }
+.empty-state-text { font-size: 14px; }
+
+/* ── Summary Cards ───────────────────────────────────────────────────────── */
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.metric-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  position: relative; overflow: hidden;
+}
+.metric-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; width: 3px; height: 100%;
+  border-radius: 0 2px 2px 0;
+}
+.metric-card.card-accent::before { background: var(--accent); }
+.metric-card.card-success::before { background: var(--success); }
+.metric-card.card-warning::before { background: var(--warning); }
+.metric-card.card-info::before { background: #3b82f6; }
+
+.metric-label { font-size: 11px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em; }
+.metric-value { font-size: 22px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.metric-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── Charts Grid ─────────────────────────────────────────────────────────── */
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.chart-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.chart-card.full-width { grid-column: 1 / -1; }
+.chart-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.chart-wrap { position: relative; height: 220px; }
+.chart-wrap.tall { height: 260px; }
+
+/* ── Detail Table ────────────────────────────────────────────────────────── */
+.detail-section { margin-top: 4px; }
+.detail-toggle {
+  font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  cursor: pointer; padding: 8px 0;
+  display: flex; align-items: center; gap: 6px;
+  background: none; border: none; font-family: inherit;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.detail-toggle:hover { color: var(--text-primary); }
+.detail-table-wrap { max-height: 300px; overflow-y: auto; border-radius: var(--radius-sm); }
+.detail-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.detail-table th {
+  position: sticky; top: 0;
+  background: var(--bg-tertiary); color: var(--text-muted);
+  font-weight: 600; text-align: left; padding: 8px 12px;
+  font-size: 11px; text-transform: uppercase;
+}
+.detail-table th.sortable {
+  cursor: pointer; user-select: none;
+  transition: color 0.15s;
+}
+.detail-table th.sortable:hover { color: var(--accent-hover); }
+.detail-table th.sortable .sort-arrow {
+  font-size: 10px; margin-left: 2px;
+}
+.detail-table th.sortable.sorted .sort-arrow { color: var(--accent-hover); }
+.detail-table td {
+  padding: 7px 12px; border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+.detail-table tr:hover td { background: rgba(99, 102, 241, 0.04); }
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 99px;
+  font-size: 10px; font-weight: 600;
+}
+.badge-success { background: var(--success-bg); color: var(--success); }
+.badge-error { background: var(--error-bg); color: var(--error); }
+
+/* ── Modal ───────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 640px; max-height: 80vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+  animation: modalIn 0.2s ease;
+}
+@keyframes modalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+.modal-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-header h2 { font-size: 15px; font-weight: 600; }
+.modal-close {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 20px; cursor: pointer; padding: 4px;
+  line-height: 1;
+}
+.modal-close:hover { color: var(--text-primary); }
+.modal-body {
+  flex: 1; overflow-y: auto; padding: 20px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.modal-body .form-row { display: flex; gap: 10px; }
+.modal-body .form-row > * { flex: 1; }
+.modal-body label {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.modal-body .field-group { display: flex; flex-direction: column; gap: 4px; }
+.modal-footer {
+  padding: 14px 20px; border-top: 1px solid var(--border);
+  display: flex; gap: 10px; justify-content: flex-end;
+}
+.btn-save { background: var(--accent); color: #fff; }
+.btn-save:hover { background: var(--accent-hover); }
+.btn-cancel { background: var(--bg-tertiary); color: var(--text-secondary); }
+.btn-cancel:hover { background: var(--border-light); }
+.btn-danger { background: transparent; color: var(--error); border: 1px solid var(--error); }
+.btn-danger:hover { background: var(--error-bg); }
+
+.provider-list { display: flex; flex-direction: column; gap: 6px; max-height: 150px; overflow-y: auto; margin-bottom: 10px; }
+.provider-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; background: var(--bg-tertiary);
+  border-radius: var(--radius-sm); cursor: pointer;
+  border: 1px solid transparent; transition: border-color 0.2s;
+  font-size: 13px;
+}
+.provider-item:hover { border-color: var(--border-light); }
+.provider-item.active { border-color: var(--accent); background: var(--accent-glow); }
+.provider-item-name { font-weight: 500; }
+.provider-item-model { font-size: 11px; color: var(--text-muted); }
+.provider-item-delete {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 16px; padding: 2px 6px;
+}
+.provider-item-delete:hover { color: var(--error); }
+.add-provider-btn {
+  width: 100%; padding: 10px; background: transparent;
+  border: 1px dashed var(--border-light); color: var(--text-muted);
+  border-radius: var(--radius-sm); cursor: pointer; font-size: 13px;
+  font-family: inherit; transition: border-color 0.2s, color 0.2s;
+}
+.add-provider-btn:hover { border-color: var(--accent); color: var(--accent-hover); }
+
+@media (max-width: 1024px) {
+  .main { flex-direction: column; }
+  .left-panel { width: 100%; min-width: auto; max-height: 40vh; }
+  .charts-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── Local Analysis Page ──────────────────────────────────────────────────── */
+.page-content { flex: 1; }
+.section-title {
+  font-size: 13px; font-weight: 600; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.hw-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.hw-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+.hw-card-header {
+  font-size: 11px; font-weight: 600; color: var(--accent-hover);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+.hw-card-body { font-size: 12px; color: var(--text-secondary); line-height: 1.7; }
+.hw-card-body .hw-row { display: flex; justify-content: space-between; padding: 3px 0; }
+.hw-card-body .hw-label { color: var(--text-muted); }
+.hw-card-body .hw-value { color: var(--text-primary); font-weight: 500; font-variant-numeric: tabular-nums; }
+.loading-text { color: var(--text-muted); font-style: italic; }
+
+.estimate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.estimate-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  border-left: 3px solid var(--accent);
+}
+.estimate-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.estimate-value {
+  font-size: 22px; font-weight: 700; margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.estimate-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+.methodology-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.method-section h3 { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
+.method-section p { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+.method-section ol { margin-left: 18px; font-size: 12px; color: var(--text-secondary); line-height: 1.8; }
+.method-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.method-table th {
+  background: var(--bg-tertiary); color: var(--text-muted);
+  font-weight: 600; padding: 7px 12px; text-align: left;
+  font-size: 11px; text-transform: uppercase;
+}
+.method-table td { padding: 7px 12px; border-bottom: 1px solid var(--border); color: var(--text-secondary); }
+.formula {
+  background: var(--bg-tertiary); color: var(--accent-hover);
+  padding: 10px 14px; border-radius: var(--radius-sm);
+  font-size: 12px; margin: 6px 0; font-family: 'JetBrains Mono', 'Consolas', monospace;
+  overflow-x: auto;
+}
+
+.field-group { display: flex; flex-direction: column; }
+
+/* ── Model Sources ────────────────────────────────────────────────────────── */
+.model-sources-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.model-source-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.ms-header {
+  font-size: 12px; font-weight: 600; color: var(--text-primary);
+  padding: 10px 16px; background: var(--bg-tertiary);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.ms-endpoint { font-size: 10px; color: var(--text-muted); font-weight: 400; }
+.ms-body { padding: 12px 16px; font-size: 12px; color: var(--text-secondary); line-height: 1.7; }
+.ms-body .ms-online { color: var(--success); font-weight: 600; }
+.ms-body .ms-offline { color: var(--text-muted); }
+.ms-body .ms-model-row { display: flex; justify-content: space-between; padding: 2px 0; }
+.ms-body .ms-model-name { color: var(--text-primary); font-weight: 500; }
+.ms-body .ms-model-info { color: var(--text-muted); font-size: 11px; }
+
+/* ── Auto-Optimize ────────────────────────────────────────────────────────── */
+.opt-log {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  max-height: 420px; min-height: 180px;
+  overflow-y: auto;
+  font-size: 12px; font-family: 'JetBrains Mono', 'Consolas', monospace;
+  color: var(--text-secondary); line-height: 1.6;
+}
+.opt-log .log-iter { color: var(--accent-hover); font-weight: 600; }
+.opt-log .log-ok { color: var(--success); }
+.opt-log .log-exceeded { color: var(--error); }
+.opt-log .log-best { color: var(--warning); font-weight: 600; }
+
+@media (max-width: 768px) {
+  .model-sources-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Toggle Switch ────────────────────────────────────────────────────────── */
+.toggle-row { display: flex; align-items: center; gap: 10px; }
+.toggle-switch { position: relative; width: 44px; height: 24px; display: inline-block; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0;
+  background: var(--bg-tertiary); border: 1px solid var(--border-light);
+  border-radius: 24px; cursor: pointer; transition: all 0.25s;
+}
+.toggle-slider::before {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px; background: var(--text-muted);
+  border-radius: 50%; transition: all 0.25s;
+}
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--accent); border-color: var(--accent);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+  background: #fff; transform: translateX(20px);
+}
+.toggle-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
+.toggle-label.active { color: var(--accent-hover); }
+</style>
+</head>
+<body>
+
+<!-- ── Header ────────────────────────────────────────────────────────────── -->
+<div class="header">
+  <div class="header-logo">⚡</div>
+  <span class="header-title">LLM 并发测试工具</span>
+  <nav class="header-nav">
+    <button class="nav-tab active" data-tab="concurrency" onclick="switchPage('concurrency')">并发测试</button>
+    <button class="nav-tab" data-tab="local" onclick="switchPage('local')">本地分析</button>
+  </nav>
+  <div class="header-right">
+    <div class="status-dot" id="statusDot"></div>
+    <span class="header-badge" id="statusText">就绪</span>
+  </div>
+</div>
+
+<!-- ── Main ──────────────────────────────────────────────────────────────── -->
+<div class="main">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- Page: Concurrency Test                                                  -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div id="pageConcurrency" class="page-content" style="display: flex; width: 100%;">
+  <!-- Left Panel -->
+  <div class="left-panel">
+    <div class="panel-section">
+      <span class="panel-label">模型供应商</span>
+      <select id="providerSelect">
+        <option value="">-- 未选择 --</option>
+      </select>
+      <div style="display: flex; gap: 6px;">
+        <button class="btn btn-manage" style="flex:1;" onclick="openProviderModal()">+ 管理供应商</button>
+        <button class="btn btn-manage" style="flex:1;" id="panelTestBtn" onclick="testConnectionFromPanel()" disabled>🔌 测试连接</button>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <span class="panel-label">并发数: <strong id="concurrencyLabel">10</strong></span>
+      <div class="concurrency-row">
+        <input type="range" id="concurrencySlider" min="1" max="200" value="10" oninput="onConcurrencyChange(this.value)">
+        <span class="concurrency-value" id="concurrencyDisplay">10</span>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <span class="panel-label">测试题目 (Prompt)</span>
+      <textarea id="promptInput" placeholder="输入测试提示词...">请用中文简要介绍人工智能的发展历程。</textarea>
+    </div>
+
+    <div style="display: flex; gap: 10px;">
+      <button class="btn btn-run" id="runBtn" onclick="startTest()">▶ 开始测试</button>
+      <button class="btn btn-stop hidden" id="stopBtn" onclick="stopTest()">■ 停止</button>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap" style="display: none;">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText">0 / 0</div>
+    </div>
+
+    <div class="panel-section" style="flex: 1; min-height: 0;">
+      <span class="panel-label">测试历史</span>
+      <div class="history-section" id="historyList">
+        <div style="font-size:11px;color:var(--text-muted);padding:8px 0;">暂无记录</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Panel -->
+  <div class="right-panel" id="rightPanel">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-state-icon">📊</div>
+      <div class="empty-state-text">配置供应商后开始测试</div>
+    </div>
+
+    <div class="summary-cards" id="summaryCards" style="display: none;"></div>
+
+    <div class="charts-grid" id="chartsGrid" style="display: none;">
+      <div class="chart-card">
+        <div class="chart-title">延迟分布直方图</div>
+        <div class="chart-wrap"><canvas id="chartHistogram"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">百分位延迟对比</div>
+        <div class="chart-wrap"><canvas id="chartPercentile"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">请求时间线 (散点图)</div>
+        <div class="chart-wrap tall"><canvas id="chartTimeline"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">首字延迟 (TTFT) 分布</div>
+        <div class="chart-wrap"><canvas id="chartTTFT"></canvas></div>
+      </div>
+    </div>
+
+    <div class="detail-section" id="detailSection" style="display: none;">
+      <button class="detail-toggle" onclick="toggleDetailTable()">
+        <span id="detailArrow">▶</span> 请求详情
+      </button>
+      <div class="detail-table-wrap" id="detailTableWrap" style="display: none;">
+        <table class="detail-table">
+          <thead>
+            <tr>
+              <th class="sortable" onclick="sortDetailBy('request_id')" id="thReqId"># <span class="sort-arrow"></span></th>
+              <th>状态</th>
+              <th class="sortable" onclick="sortDetailBy('total_latency_ms')" id="thLatency">总延迟 <span class="sort-arrow"></span></th>
+              <th class="sortable" onclick="sortDetailBy('ttft_ms')" id="thTTFT">TTFT <span class="sort-arrow"></span></th>
+              <th class="sortable" onclick="sortDetailBy('token_count')" id="thTokens">Token数 <span class="sort-arrow"></span></th>
+              <th>时间</th><th>错误</th>
+            </tr>
+          </thead>
+          <tbody id="detailTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  </div><!-- end pageConcurrency -->
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- Page: Local Analysis                                                    -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div id="pageLocal" class="page-content" style="display: none; width: 100%; overflow-y: auto; padding: 20px 24px; flex-direction: column; gap: 18px;">
+    <!-- Hardware Cards -->
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div class="section-title">🖥️ 本地硬件信息</div>
+      <button class="btn btn-manage" onclick="loadHardwareInfo()" style="font-size:11px;padding:4px 10px;">🔄 刷新</button>
+    </div>
+    <div class="hw-grid" id="hwGrid">
+      <div class="hw-card" id="hwCpu">
+        <div class="hw-card-header">CPU</div>
+        <div class="hw-card-body"><span class="loading-text">检测中...</span></div>
+      </div>
+      <div class="hw-card" id="hwRam">
+        <div class="hw-card-header">内存</div>
+        <div class="hw-card-body"><span class="loading-text">检测中...</span></div>
+      </div>
+      <div class="hw-card" id="hwGpu">
+        <div class="hw-card-header">GPU</div>
+        <div class="hw-card-body"><span class="loading-text">检测中...</span></div>
+      </div>
+    </div>
+
+    <!-- Theoretical Estimates -->
+    <div class="section-title">📐 理论估算</div>
+    <div class="estimate-grid" id="estimateGrid">
+      <div class="estimate-card">
+        <div class="estimate-label">模型权重体积</div>
+        <div class="estimate-value" id="estModelSize">—</div>
+        <div class="estimate-sub">基于提供商配置的模型</div>
+      </div>
+      <div class="estimate-card">
+        <div class="estimate-label">显存带宽上限</div>
+        <div class="estimate-value" id="estBandwidth">—</div>
+        <div class="estimate-sub">Decode 阶段吞吐瓶颈</div>
+      </div>
+      <div class="estimate-card">
+        <div class="estimate-label">预估单流 tok/s</div>
+        <div class="estimate-value" id="estSingleStream">—</div>
+        <div class="estimate-sub">显存带宽 ÷ 模型体积 × 0.75</div>
+      </div>
+      <div class="estimate-card">
+        <div class="estimate-label">显存可容纳 Batch</div>
+        <div class="estimate-value" id="estMaxBatch">—</div>
+        <div class="estimate-sub">基于剩余显存和 KV Cache 估算</div>
+      </div>
+    </div>
+
+    <!-- Model Sources Detection -->
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div class="section-title">🔍 运行模型检测</div>
+      <button class="btn btn-manage" onclick="loadModelSources()" style="font-size:11px;padding:4px 10px;">🔄 检测</button>
+    </div>
+    <div class="model-sources-grid" id="modelSourcesGrid">
+      <div class="model-source-card" id="msOllama">
+        <div class="ms-header">Ollama <span class="ms-endpoint">127.0.0.1:11434</span></div>
+        <div class="ms-body"><span class="loading-text">点击"检测"查询</span></div>
+      </div>
+      <div class="model-source-card" id="msLmstudio">
+        <div class="ms-header">LM Studio <span class="ms-endpoint">127.0.0.1:1234</span></div>
+        <div class="ms-body"><span class="loading-text">点击"检测"查询</span></div>
+      </div>
+    </div>
+
+    <!-- Auto-Optimize QPS -->
+    <div class="section-title">🎯 自动最佳 QPS</div>
+    <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+      <div class="field-group" style="min-width: 130px;">
+        <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;">最大 TTFT (ms)</label>
+        <input type="number" id="optMaxTtft" value="1500" min="100" max="30000" style="margin-top:4px; width:130px;">
+      </div>
+      <div class="field-group" style="min-width: 130px;">
+        <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;">最大 TPOT (ms)</label>
+        <input type="number" id="optMaxTpot" value="50" min="10" max="5000" style="margin-top:4px; width:130px;">
+      </div>
+      <div class="field-group" style="min-width: 100px; justify-content: flex-end;">
+        <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;">测试模式</label>
+        <div class="toggle-row" style="margin-top:4px;">
+          <span class="toggle-label" id="toggleQuickLabel">快速扫描</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="optStressMode" onchange="onStressModeChange(this.checked)">
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label" id="toggleStressLabel">压力测试</span>
+        </div>
+      </div>
+      <div class="field-group" style="min-width: 160px; flex:1;">
+        <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;">供应商</label>
+        <select id="optProviderSelect" style="margin-top:4px;">
+          <option value="">-- 未选择 --</option>
+        </select>
+      </div>
+      <div class="field-group" style="min-width: 200px; flex:2;">
+        <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;">提示词</label>
+        <input type="text" id="optPrompt" value="你好，请简要介绍人工智能。" style="margin-top:4px;">
+      </div>
+      <button class="btn btn-run" id="optRunBtn" onclick="startAutoOptimize()" style="height:38px;">▶ 自动寻优</button>
+    </div>
+    <div class="progress-wrap" id="optProgressWrap" style="display: none;">
+      <div class="progress-bar"><div class="progress-fill" id="optProgressFill"></div></div>
+      <div class="progress-text" id="optProgressText">准备中...</div>
+    </div>
+    <div class="opt-log" id="optLog" style="display: none;"></div>
+    <div class="summary-cards" id="optSummaryCards" style="display: none;"></div>
+
+    <!-- Auto-Optimize Charts -->
+    <div class="charts-grid" id="optChartsGrid" style="display: none;">
+      <div class="chart-card">
+        <div class="chart-title">并发 vs QPS（吞吐曲线）</div>
+        <div class="chart-wrap tall"><canvas id="optChartQps"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">并发 vs TTFT（首字延迟）</div>
+        <div class="chart-wrap tall"><canvas id="optChartTtft"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">并发 vs TPOT（每 Token 延迟）</div>
+        <div class="chart-wrap tall"><canvas id="optChartTpot"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">并发 vs 成功率</div>
+        <div class="chart-wrap tall"><canvas id="optChartSuccessRate"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Methodology Guide -->
+    <div class="section-title">📖 自动最佳 QPS 测试方法说明</div>
+    <div class="methodology-card">
+      <div class="method-section">
+        <h3>自动寻优原理</h3>
+        <p>本工具采用<strong>迭代倍增并发</strong>策略，从并发数 1 开始，每次翻倍（1→2→4→8→16→...→200），自动运行压测并评估 TTFT（首字延迟）和 TPOT（每 Token 生成延迟）是否在用户设定的 SLA 阈值内。当任一指标超过阈值时停止，<strong>前一个并发级别</strong>即为最优配置。</p>
+      </div>
+      <div class="method-section">
+        <h3>关键指标定义</h3>
+        <table class="method-table">
+          <thead><tr><th>指标</th><th>定义</th><th>典型 SLA</th></tr></thead>
+          <tbody>
+            <tr><td><strong>TTFT</strong> (Time To First Token)</td><td>发送请求到收到第一个 token 的延迟</td><td>聊天 < 1.5s，实时 < 500ms</td></tr>
+            <tr><td><strong>TPOT</strong> (Time Per Output Token)</td><td>生成阶段每个 token 的平均耗时</td><td>流畅阅读 < 50ms，可接受 < 100ms</td></tr>
+            <tr><td><strong>QPS</strong> (Queries Per Second)</td><td>并发数 ÷ 平均请求延迟(秒)</td><td>越高越好，但需满足 SLA</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="method-section">
+        <h3>测试流程</h3>
+        <ol>
+          <li>选择模型供应商，输入简短的测试提示词（系统使用 max_tokens=32 加速迭代）</li>
+          <li>设定 TTFT 和 TPOT 的 SLA 上限（默认 1500ms / 50ms）</li>
+          <li>点击"自动寻优"，系统自动倍增并发并记录每轮的 QPS、TTFT、TPOT</li>
+          <li>当 TTFT 或 TPOT 超过阈值（或成功率 < 50%）时停止</li>
+          <li>查看右侧 4 张图表：QPS 曲线、TTFT 增长、TPOT 变化、成功率趋势</li>
+          <li>曲线拐点（TTFT 指数上升、QPS 增长趋缓）即为系统瓶颈所在</li>
+        </ol>
+      </div>
+      <div class="method-section">
+        <h3>结果解读</h3>
+        <p><strong>最佳并发</strong>是满足 SLA 的最大并发数。<strong>最佳 QPS</strong> 是该并发下的实际吞吐量。若最佳并发 = 1，说明单请求就已接近阈值，模型推理速度偏慢或提示词过长。若最佳并发 > 100，说明系统仍有较大余量，可尝试更低的 TPOT 阈值重新测试。</p>
+      </div>
+    </div>
+  </div><!-- end pageLocal -->
+
+</div>
+
+<!-- ── Provider Modal ─────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="providerModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>管理模型供应商</h2>
+      <button class="modal-close" onclick="closeProviderModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="provider-list" id="providerList"></div>
+      <button class="add-provider-btn" id="addProviderBtn" onclick="newProviderForm()">+ 添加新供应商</button>
+      <div id="providerForm" style="display: none; flex-direction: column; gap: 12px;">
+        <div class="form-row">
+          <div class="field-group">
+            <label>名称 *</label>
+            <input type="text" id="pfName" placeholder="例如: OpenAI GPT-4o">
+          </div>
+          <div class="field-group">
+            <label>API Base URL *</label>
+            <input type="text" id="pfBase" placeholder="https://api.openai.com/v1">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field-group">
+            <label>API Key (可选)</label>
+            <input type="password" id="pfKey" placeholder="留空则不发送 Authorization">
+          </div>
+          <div class="field-group">
+            <label>模型名称 *</label>
+            <input type="text" id="pfModel" placeholder="gpt-4o">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field-group">
+            <label>Max Tokens</label>
+            <input type="number" id="pfMaxTokens" value="512" min="1" max="16384">
+          </div>
+          <div class="field-group">
+            <label>Temperature</label>
+            <input type="number" id="pfTemp" value="0.0" min="0" max="2" step="0.1">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="field-group">
+            <label>额外 Headers (JSON, 可选)</label>
+            <input type="text" id="pfHeaders" placeholder='{"X-Custom-Header": "value"}'>
+          </div>
+          <div class="field-group">
+            <label>额外 Body (JSON, 可选)</label>
+            <input type="text" id="pfBody" placeholder='{"custom_param": "value"}'>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" id="modalFooter" style="display: none;">
+      <button class="btn btn-danger" id="modalDeleteBtn" style="margin-right: auto;" onclick="deleteCurrentProvider()">删除</button>
+      <button class="btn btn-cancel" onclick="closeProviderModal()">取消</button>
+      <button class="btn btn-manage" id="modalTestBtn" onclick="testConnectionFromForm()">🔌 测试连接</button>
+      <button class="btn btn-save" onclick="saveCurrentProvider()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── JavaScript ─────────────────────────────────────────────────────────── -->
+<script>
+// ── State ──
+const state = {
+  providers: [],
+  selectedProviderId: null,
+  concurrency: 10,
+  prompt: '',
+  isRunning: false,
+  currentTestId: null,
+  eventSource: null,
+  allResults: [],
+  aggregateResults: null,
+  charts: { histogram: null, percentile: null, timeline: null, ttft: null },
+  editingProviderId: null,
+  history: [],
+  detailSortKey: null,
+  detailSortAsc: true,
+  // Auto-optimize state
+  activePage: 'concurrency',
+  optIterations: [],  // accumulates iteration results for charts
+  optCharts: { qps: null, ttft: null, tpot: null, successRate: null },
+};
+
+// ── Initialization ──
+async function initApp() {
+  state.prompt = document.getElementById('promptInput').value;
+  try {
+    await loadProviders();
+  } catch (e) {
+    console.error('Failed to load providers:', e);
+    showToast('error', '无法加载供应商列表，请确认服务器已启动');
+  }
+  // No auto-select — user must explicitly choose a provider
+  loadHistory();
+  try {
+    initCharts();
+  } catch (e) {
+    console.error('Failed to init charts:', e);
+    showToast('error', '图表库加载失败，请检查网络连接 (Chart.js CDN)');
+    // Null out chart canvases so updateCharts doesn't crash
+    state.charts = { histogram: null, percentile: null, timeline: null, ttft: null };
+  }
+}
+
+async function loadProviders() {
+  try {
+    const res = await fetch('/api/providers');
+    state.providers = await res.json();
+    const sel = document.getElementById('providerSelect');
+    sel.innerHTML = '<option value="">-- 未选择 --</option>';
+    state.providers.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = `${p.name} (${p.model})`;
+      sel.appendChild(opt);
+    });
+    updateRunButton();
+    populateLocalProviderSelect();
+  } catch (e) {
+    console.error('Failed to load providers', e);
+  }
+}
+
+// ── Page Switching ──
+function switchPage(tab) {
+  state.activePage = tab;
+  document.querySelectorAll('.nav-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.getElementById('pageConcurrency').style.display = tab === 'concurrency' ? 'flex' : 'none';
+  document.getElementById('pageLocal').style.display = tab === 'local' ? 'flex' : 'none';
+  if (tab === 'local') {
+    loadHardwareInfo();
+    loadModelSources();
+    populateLocalProviderSelect();
+    // Resize opt charts if they were already created
+    setTimeout(() => {
+      Object.values(state.optCharts).forEach(c => { if (c && c.resize) c.resize(); });
+    }, 100);
+  } else {
+    // Resize main charts when switching back
+    setTimeout(() => {
+      Object.values(state.charts).forEach(c => { if (c && c.resize) c.resize(); });
+    }, 100);
+  }
+}
+
+// ── Hardware Info ──
+async function loadHardwareInfo() {
+  try {
+    const res = await fetch('/api/hardware');
+    const hw = await res.json();
+    renderHwCpu(hw.cpu);
+    renderHwRam(hw.ram);
+    renderHwGpu(hw.gpu);
+    renderEstimates(hw);
+  } catch (e) {
+    console.error('Failed to load hardware info:', e);
+    document.querySelectorAll('.hw-card-body').forEach(el => {
+      if (el.querySelector('.loading-text')) el.innerHTML = '<span style="color:var(--error)">检测失败</span>';
+    });
+  }
+}
+
+function renderHwCpu(cpu) {
+  const el = document.getElementById('hwCpu').querySelector('.hw-card-body');
+  el.innerHTML = `
+    <div class="hw-row"><span class="hw-label">型号</span><span class="hw-value">${escHtml(cpu.name)}</span></div>
+    <div class="hw-row"><span class="hw-label">物理核心</span><span class="hw-value">${cpu.physical_cores} 核</span></div>
+    <div class="hw-row"><span class="hw-label">逻辑线程</span><span class="hw-value">${cpu.logical_cores} 线程</span></div>
+    <div class="hw-row"><span class="hw-label">基础频率</span><span class="hw-value">${cpu.base_clock_mhz != null ? cpu.base_clock_mhz + ' MHz' : 'N/A'}</span></div>
+    <div class="hw-row"><span class="hw-label">架构</span><span class="hw-value">${escHtml(cpu.architecture)}</span></div>
+  `;
+}
+
+function renderHwRam(ram) {
+  const el = document.getElementById('hwRam').querySelector('.hw-card-body');
+  let sticksHtml = '';
+  if (ram.sticks && ram.sticks.length > 0) {
+    sticksHtml = ram.sticks.map((s, i) => `
+      <div class="hw-row"><span class="hw-label">插槽 #${i + 1}</span><span class="hw-value">${s.capacity_gb} GB ${s.speed_mhz > 0 ? '@ ' + s.speed_mhz + ' MHz' : ''}</span></div>
+    `).join('');
+  }
+  el.innerHTML = `
+    <div class="hw-row"><span class="hw-label">总容量</span><span class="hw-value">${ram.total_gb} GB</span></div>
+    <div class="hw-row"><span class="hw-label">可用</span><span class="hw-value">${ram.available_gb} GB</span></div>
+    <div class="hw-row"><span class="hw-label">使用率</span><span class="hw-value">${ram.used_percent}%</span></div>
+    ${sticksHtml}
+  `;
+}
+
+function renderHwGpu(gpu) {
+  const el = document.getElementById('hwGpu').querySelector('.hw-card-body');
+  if (!gpu.available || !gpu.cards || gpu.cards.length === 0) {
+    el.innerHTML = '<span style="color:var(--text-muted)">未检测到 NVIDIA GPU</span>';
+    return;
+  }
+  const c = gpu.cards[0];
+  el.innerHTML = `
+    <div class="hw-row"><span class="hw-label">型号</span><span class="hw-value">${escHtml(c.name)}</span></div>
+    <div class="hw-row"><span class="hw-label">显存</span><span class="hw-value">${c.vram_total_gb} GB (可用 ${c.vram_free_gb} GB)</span></div>
+    <div class="hw-row"><span class="hw-label">CUDA 核心</span><span class="hw-value">${c.cuda_cores}</span></div>
+    <div class="hw-row"><span class="hw-label">显存位宽</span><span class="hw-value">${c.memory_bus_width}-bit</span></div>
+    <div class="hw-row"><span class="hw-label">显存时钟</span><span class="hw-value">${c.memory_clock_mhz} MHz (有效 ~${c.memory_clock_mhz * 2} MHz)</span></div>
+    <div class="hw-row"><span class="hw-label">显存带宽</span><span class="hw-value">${c.memory_bandwidth_gb_s != null ? c.memory_bandwidth_gb_s + ' GB/s' : 'N/A'}</span></div>
+    <div class="hw-row"><span class="hw-label">GPU 最大频率</span><span class="hw-value">${c.max_graphics_clock_mhz} MHz</span></div>
+    <div class="hw-row"><span class="hw-label">计算能力</span><span class="hw-value">${c.compute_capability}</span></div>
+    <div class="hw-row"><span class="hw-label">PCIe</span><span class="hw-value">Gen ${c.pcie_generation} ×${c.pcie_link_width}</span></div>
+  `;
+}
+
+function renderEstimates(hw) {
+  // Model weight estimate based on selected provider
+  const gpu = hw.gpu;
+  let modelSizeGb = null;
+  let bandwidthGbS = null;
+  let freeVramGb = null;
+
+  if (gpu && gpu.available && gpu.cards && gpu.cards.length > 0) {
+    bandwidthGbS = gpu.cards[0].memory_bandwidth_gb_s;
+    freeVramGb = gpu.cards[0].vram_free_gb;
+  }
+
+  // Try to guess model size from provider name
+  const sel = document.getElementById('optProviderSelect');
+  if (sel && sel.selectedIndex > 0) {
+    const modelName = (sel.options[sel.selectedIndex].textContent || '').toLowerCase();
+    if (modelName.includes('20b') || modelName.includes('20m')) modelSizeGb = 40; // FP16 20B ≈ 40GB (but quantized...)
+    else if (modelName.includes('13b')) modelSizeGb = 26;
+    else if (modelName.includes('7b') || modelName.includes('8b')) modelSizeGb = 14;
+    else if (modelName.includes('3b')) modelSizeGb = 6;
+    else if (modelName.includes('1.5b') || modelName.includes('1b')) modelSizeGb = 3;
+    else modelSizeGb = null; // unknown
+  }
+
+  // Bandwidth
+  document.getElementById('estBandwidth').textContent = bandwidthGbS != null ? bandwidthGbS + ' GB/s' : 'N/A';
+
+  // Model size
+  document.getElementById('estModelSize').textContent = modelSizeGb != null ? '~' + modelSizeGb + ' GB (FP16 估算)' : '请选择供应商';
+
+  // Single stream estimate
+  if (modelSizeGb && bandwidthGbS) {
+    const tokPerSec = Math.round(bandwidthGbS / modelSizeGb * 0.75);
+    document.getElementById('estSingleStream').textContent = '~' + tokPerSec + ' tok/s';
+  } else {
+    document.getElementById('estSingleStream').textContent = '请选择供应商';
+  }
+
+  // Max batch estimate (simplified: VRAM free / model size, minus KV cache overhead)
+  if (modelSizeGb && freeVramGb) {
+    const maxBatch = Math.max(1, Math.floor(freeVramGb / modelSizeGb * 0.6));
+    document.getElementById('estMaxBatch').textContent = '~' + maxBatch + ' 并发';
+  } else {
+    document.getElementById('estMaxBatch').textContent = '请选择供应商';
+  }
+}
+
+function populateLocalProviderSelect() {
+  populateOptProviderSelect();
+}
+
+function populateOptProviderSelect() {
+  const sel = document.getElementById('optProviderSelect');
+  if (!sel) return;
+  const curVal = sel.value;
+  sel.innerHTML = '<option value="">-- 未选择 --</option>';
+  state.providers.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = `${p.name} (${p.model})`;
+    sel.appendChild(opt);
+  });
+  if (curVal && state.providers.find(p => p.id === curVal)) sel.value = curVal;
+  document.getElementById('optRunBtn').disabled = !sel.value;
+  sel.onchange = function() {
+    document.getElementById('optRunBtn').disabled = !this.value;
+  };
+}
+
+// ── Model Sources ──
+async function loadModelSources() {
+  document.querySelectorAll('.ms-body').forEach(el => {
+    el.innerHTML = '<span class="loading-text">检测中...</span>';
+  });
+  try {
+    const res = await fetch('/api/model-sources');
+    const data = await res.json();
+    renderOllamaCard(data.ollama);
+    renderLmstudioCard(data.lmstudio);
+  } catch (e) {
+    console.error('Model sources detection failed:', e);
+    document.querySelectorAll('.ms-body').forEach(el => {
+      el.innerHTML = '<span style="color:var(--error)">检测失败</span>';
+    });
+  }
+}
+
+function renderOllamaCard(ollama) {
+  const el = document.getElementById('msOllama').querySelector('.ms-body');
+  if (!ollama.available) {
+    el.innerHTML = '<span class="ms-offline">● 未检测到 Ollama 服务</span>';
+    return;
+  }
+  let html = '<span class="ms-online">● 在线</span>';
+  if (ollama.models.length === 0) {
+    html += '<div style="margin-top:4px;color:var(--text-muted)">无已加载模型</div>';
+  } else {
+    html += ollama.models.map(m => `
+      <div class="ms-model-row" style="margin-top:6px;">
+        <span class="ms-model-name">${escHtml(m.name)}</span>
+        <span class="ms-model-info">${m.parameter_size} · ${m.quantization}${m.estimated_vram_gb != null ? ' · ~' + m.estimated_vram_gb + ' GB' : ''}</span>
+      </div>
+    `).join('');
+  }
+  el.innerHTML = html;
+}
+
+function renderLmstudioCard(lmstudio) {
+  const el = document.getElementById('msLmstudio').querySelector('.ms-body');
+  if (!lmstudio.available) {
+    el.innerHTML = '<span class="ms-offline">● 未检测到 LM Studio 服务</span>';
+    return;
+  }
+  let html = '<span class="ms-online">● 在线</span>';
+  if (lmstudio.models.length === 0) {
+    html += '<div style="margin-top:4px;color:var(--text-muted)">无已加载模型</div>';
+  } else {
+    html += lmstudio.models.map(m => `
+      <div class="ms-model-row" style="margin-top:6px;">
+        <span class="ms-model-name">${escHtml(m.name)}</span>
+        <span class="ms-model-info">${m.parameter_size} · ${m.quantization}${m.estimated_vram_gb != null ? ' · ~' + m.estimated_vram_gb + ' GB' : ''}</span>
+      </div>
+    `).join('');
+  }
+  el.innerHTML = html;
+}
+
+// ── Auto-Optimize QPS ──
+function onStressModeChange(checked) {
+  document.getElementById('toggleQuickLabel').classList.toggle('active', !checked);
+  document.getElementById('toggleStressLabel').classList.toggle('active', checked);
+  document.getElementById('optRunBtn').textContent = checked ? '▶ 压力测试' : '▶ 快速扫描';
+}
+
+async function startAutoOptimize() {
+  const providerId = document.getElementById('optProviderSelect').value;
+  if (!providerId) return alert('请选择供应商');
+  const prompt = document.getElementById('optPrompt').value.trim();
+  if (!prompt) return alert('请输入测试提示词');
+
+  const maxTtft = parseInt(document.getElementById('optMaxTtft').value) || 1500;
+  const maxTpot = parseInt(document.getElementById('optMaxTpot').value) || 50;
+  const stressMode = document.getElementById('optStressMode').checked;
+
+  document.getElementById('optRunBtn').disabled = true;
+  document.getElementById('optProgressWrap').style.display = 'block';
+  document.getElementById('optProgressFill').style.width = '0%';
+  document.getElementById('optProgressText').textContent = '准备中...';
+  document.getElementById('optLog').style.display = 'block';
+  const modeLabel = stressMode ? '压力测试 (完整 max_tokens)' : '快速扫描 (max_tokens=32)';
+  document.getElementById('optLog').innerHTML = `<div>🚀 开始自动寻优 — ${modeLabel}...</div>`;
+  document.getElementById('optSummaryCards').style.display = 'none';
+  setStatus('running', stressMode ? '压力测试中...' : '快速扫描中...');
+
+  try {
+    const res = await fetch('/api/auto-optimize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider_id: providerId, prompt, max_ttft_ms: maxTtft, max_tpot_ms: maxTpot, stress_mode: stressMode })
+    });
+    const data = await res.json();
+    const testId = data.test_id;
+
+    const es = new EventSource(`/api/auto-optimize/${testId}/stream`);
+    state._optEventSource = es;
+    es.onmessage = function(event) {
+      try {
+        const msg = JSON.parse(event.data);
+        handleOptSSEEvent(msg);
+      } catch (e) { console.error('Opt SSE parse error', e); }
+    };
+    es.onerror = function() {
+      es.close();
+      finishAutoOptimize();
+    };
+  } catch (e) {
+    alert('启动失败: ' + e.message);
+    finishAutoOptimize();
+  }
+}
+
+function handleOptSSEEvent(msg) {
+  const log = document.getElementById('optLog');
+  switch (msg.type) {
+    case 'auto_start':
+      state.optIterations = [];
+      document.getElementById('optChartsGrid').style.display = 'grid';
+      document.getElementById('optSummaryCards').style.display = 'none';
+      if (!state.optCharts.qps) initOptCharts();
+      const modeStr = msg.stress_mode ? '压力测试 (完整 tokens)' : '快速扫描 (max_tokens=32)';
+      log.innerHTML += `<div>📋 模式: ${modeStr} | TTFT ≤ ${msg.max_ttft_ms}ms, TPOT ≤ ${msg.max_tpot_ms}ms | 供应商: ${msg.provider_name} (${msg.model})</div>`;
+      break;
+    case 'iteration_start':
+      log.innerHTML += `<div><span class="log-iter">▶ 测试并发数: ${msg.concurrency}</span> (进行中...)</div>`;
+      document.getElementById('optProgressText').textContent = `正在测试并发 ${msg.concurrency}...`;
+      log.scrollTop = log.scrollHeight;
+      break;
+    case 'iteration_complete':
+      const ttft = msg.avg_ttft_ms != null ? msg.avg_ttft_ms.toFixed(0) + 'ms' : 'N/A';
+      const tpot = msg.avg_tpot_ms != null ? msg.avg_tpot_ms.toFixed(1) + 'ms' : 'N/A';
+      const ok = msg.success_rate >= 50;
+      log.innerHTML += `<div>  ${ok ? '<span class="log-ok">✓</span>' : '<span class="log-exceeded">✗</span>'} 并发=${msg.concurrency} | QPS=${msg.qps} | TTFT=${ttft} | TPOT=${tpot} | 成功率=${msg.success_rate}%</div>`;
+      log.scrollTop = log.scrollHeight;
+      document.getElementById('optProgressFill').style.width = Math.min(95, (msg.concurrency / 200 * 100)).toFixed(0) + '%';
+      // Store iteration data and update charts
+      state.optIterations.push({
+        concurrency: msg.concurrency,
+        qps: msg.qps,
+        avg_ttft_ms: msg.avg_ttft_ms,
+        avg_tpot_ms: msg.avg_tpot_ms,
+        success_rate: msg.success_rate,
+      });
+      updateOptCharts();
+      break;
+    case 'threshold_exceeded':
+      log.innerHTML += `<div><span class="log-exceeded">⛔ 阈值超限:</span> ${msg.reason} (并发=${msg.concurrency})</div>`;
+      log.scrollTop = log.scrollHeight;
+      break;
+    case 'high_error_rate':
+      log.innerHTML += `<div><span class="log-exceeded">⚠ 错误率过高:</span> ${msg.success_rate}% (并发=${msg.concurrency})</div>`;
+      log.scrollTop = log.scrollHeight;
+      break;
+    case 'auto_complete':
+      if (msg.best_concurrency > 0) {
+        log.innerHTML += `<div class="log-best">🏆 最佳并发: ${msg.best_concurrency} | 最佳 QPS: ${msg.best_qps}</div>`;
+        if (msg.best_results && msg.best_results.aggregate) {
+          const agg = msg.best_results.aggregate;
+          document.getElementById('optSummaryCards').style.display = 'grid';
+          document.getElementById('optSummaryCards').innerHTML = `
+            <div class="metric-card card-accent">
+              <div class="metric-label">最佳并发</div>
+              <div class="metric-value">${msg.best_concurrency}</div>
+              <div class="metric-sub">最佳 QPS: ${msg.best_qps}</div>
+            </div>
+            <div class="metric-card card-success">
+              <div class="metric-label">成功率</div>
+              <div class="metric-value">${agg.success_rate}%</div>
+              <div class="metric-sub">${agg.success_count} / ${agg.total_requests} 成功</div>
+            </div>
+            <div class="metric-card card-info">
+              <div class="metric-label">平均 TTFT</div>
+              <div class="metric-value">${agg.avg_ttft_ms != null ? agg.avg_ttft_ms.toFixed(0) + '<span style="font-size:13px;font-weight:400">ms</span>' : 'N/A'}</div>
+              <div class="metric-sub">目标: ≤ ${parseInt(document.getElementById('optMaxTtft').value) || 1500}ms</div>
+            </div>
+            <div class="metric-card card-warning">
+              <div class="metric-label">平均延迟</div>
+              <div class="metric-value">${agg.avg_latency_ms.toFixed(0)}<span style="font-size:13px;font-weight:400">ms</span></div>
+              <div class="metric-sub">P95: ${agg.p95_latency_ms.toFixed(0)} ms</div>
+            </div>
+          `;
+        }
+      } else {
+        log.innerHTML += `<div><span class="log-exceeded">❌ 未找到满足阈值的并发配置，请放宽 TTFT/TPOT 限制</span></div>`;
+      }
+      log.scrollTop = log.scrollHeight;
+      document.getElementById('optProgressFill').style.width = '100%';
+      document.getElementById('optProgressText').textContent = '完成';
+      break;
+  }
+}
+
+function finishAutoOptimize() {
+  if (state._optEventSource) {
+    state._optEventSource.close();
+    state._optEventSource = null;
+  }
+  document.getElementById('optRunBtn').disabled = !document.getElementById('optProviderSelect').value;
+  setStatus('done', '就绪');
+}
+
+// ── Auto-Optimize Charts ──
+function initOptCharts() {
+  if (typeof Chart === 'undefined') return;
+  try {
+    const ctx1 = document.getElementById('optChartQps').getContext('2d');
+    state.optCharts.qps = new Chart(ctx1, {
+      type: 'line',
+      data: { labels: [], datasets: [
+        { label: 'QPS', data: [], borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)', fill: true, tension: 0.3, pointRadius: 5, pointBackgroundColor: '#6366f1' }
+      ]},
+      options: { ...chartOptions(), scales: { x: { ...chartOptions().scales.x, title: { text: '并发数', color: '#64748b', font: { size: 10 } } }, y: { ...chartOptions().scales.y, title: { text: 'QPS', color: '#64748b', font: { size: 10 } } } } }
+    });
+    const ctx2 = document.getElementById('optChartTtft').getContext('2d');
+    state.optCharts.ttft = new Chart(ctx2, {
+      type: 'line',
+      data: { labels: [], datasets: [
+        { label: 'TTFT (ms)', data: [], borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', fill: true, tension: 0.3, pointRadius: 5, pointBackgroundColor: '#f59e0b' }
+      ]},
+      options: { ...chartOptions(), scales: { x: { ...chartOptions().scales.x, title: { text: '并发数', color: '#64748b', font: { size: 10 } } }, y: { ...chartOptions().scales.y, title: { text: 'TTFT (ms)', color: '#64748b', font: { size: 10 } } } } }
+    });
+    const ctx3 = document.getElementById('optChartTpot').getContext('2d');
+    state.optCharts.tpot = new Chart(ctx3, {
+      type: 'line',
+      data: { labels: [], datasets: [
+        { label: 'TPOT (ms)', data: [], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', fill: true, tension: 0.3, pointRadius: 5, pointBackgroundColor: '#10b981' }
+      ]},
+      options: { ...chartOptions(), scales: { x: { ...chartOptions().scales.x, title: { text: '并发数', color: '#64748b', font: { size: 10 } } }, y: { ...chartOptions().scales.y, title: { text: 'TPOT (ms)', color: '#64748b', font: { size: 10 } } } } }
+    });
+    const ctx4 = document.getElementById('optChartSuccessRate').getContext('2d');
+    state.optCharts.successRate = new Chart(ctx4, {
+      type: 'line',
+      data: { labels: [], datasets: [
+        { label: '成功率 (%)', data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.3, pointRadius: 5, pointBackgroundColor: '#3b82f6' }
+      ]},
+      options: { ...chartOptions(), scales: { x: { ...chartOptions().scales.x, title: { text: '并发数', color: '#64748b', font: { size: 10 } } }, y: { ...chartOptions().scales.y, min: 0, max: 100, title: { text: '成功率 (%)', color: '#64748b', font: { size: 10 } } } } }
+    });
+  } catch (e) {
+    console.error('Opt chart init failed:', e);
+    state.optCharts = { qps: null, ttft: null, tpot: null, successRate: null };
+  }
+}
+
+function updateOptCharts() {
+  const iters = state.optIterations;
+  if (iters.length === 0) return;
+  const labels = iters.map(i => i.concurrency);
+  function safeUpdate(chart, fn) {
+    if (!chart) return;
+    try { fn(chart); chart.resize(); chart.update(); } catch (e) { console.error('Opt chart update error:', e); }
+  }
+  safeUpdate(state.optCharts.qps, c => {
+    c.data.labels = labels;
+    c.data.datasets[0].data = iters.map(i => i.qps);
+  });
+  safeUpdate(state.optCharts.ttft, c => {
+    c.data.labels = labels;
+    c.data.datasets[0].data = iters.map(i => i.avg_ttft_ms);
+  });
+  safeUpdate(state.optCharts.tpot, c => {
+    c.data.labels = labels;
+    c.data.datasets[0].data = iters.map(i => i.avg_tpot_ms);
+  });
+  safeUpdate(state.optCharts.successRate, c => {
+    c.data.labels = labels;
+    c.data.datasets[0].data = iters.map(i => i.success_rate);
+  });
+}
+
+// ── Charts Setup ──
+function chartOptions(title = '') {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 400 },
+    plugins: {
+      legend: {
+        labels: { color: '#94a3b8', font: { size: 10 }, boxWidth: 10, padding: 12 }
+      },
+      tooltip: {
+        backgroundColor: 'rgba(15, 23, 42, 0.95)',
+        titleColor: '#f1f5f9',
+        bodyColor: '#cbd5e1',
+        borderColor: '#334155',
+        borderWidth: 1,
+        padding: 10,
+        titleFont: { size: 11 },
+        bodyFont: { size: 11 },
+      }
+    },
+    scales: {
+      x: {
+        ticks: { color: '#64748b', font: { size: 10 } },
+        grid: { color: 'rgba(51, 65, 85, 0.3)' },
+        border: { color: '#334155' }
+      },
+      y: {
+        ticks: { color: '#64748b', font: { size: 10 } },
+        grid: { color: 'rgba(51, 65, 85, 0.3)' },
+        border: { color: '#334155' }
+      }
+    }
+  };
+}
+
+function initCharts() {
+  if (typeof Chart === 'undefined') {
+    throw new Error('Chart.js not loaded');
+  }
+  // Histogram
+  const ctx1 = document.getElementById('chartHistogram').getContext('2d');
+  state.charts.histogram = new Chart(ctx1, {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: '请求数', data: [], backgroundColor: '#6366f1', borderRadius: 4 }] },
+    options: chartOptions()
+  });
+
+  // Percentile bar
+  const ctx2 = document.getElementById('chartPercentile').getContext('2d');
+  state.charts.percentile = new Chart(ctx2, {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: '延迟 (ms)', data: [], backgroundColor: [], borderRadius: 4 }] },
+    options: { ...chartOptions(), indexAxis: 'y' }
+  });
+
+  // Timeline scatter
+  const ctx3 = document.getElementById('chartTimeline').getContext('2d');
+  state.charts.timeline = new Chart(ctx3, {
+    type: 'scatter',
+    data: {
+      datasets: [
+        { label: '成功', data: [], backgroundColor: '#10b981', pointRadius: 4, pointHoverRadius: 7 },
+        { label: '失败', data: [], backgroundColor: '#ef4444', pointRadius: 4, pointHoverRadius: 7 },
+      ]
+    },
+    options: {
+      ...chartOptions(),
+      scales: {
+        x: { ...chartOptions().scales.x, title: { text: '请求 ID', color: '#64748b', font: { size: 10 } } },
+        y: { ...chartOptions().scales.y, title: { text: '延迟 (ms)', color: '#64748b', font: { size: 10 } } }
+      }
+    }
+  });
+
+  // TTFT distribution
+  const ctx4 = document.getElementById('chartTTFT').getContext('2d');
+  state.charts.ttft = new Chart(ctx4, {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: '请求数', data: [], backgroundColor: '#a855f7', borderRadius: 4 }] },
+    options: chartOptions()
+  });
+}
+
+function binValues(values, binCount) {
+  if (values.length === 0) return { labels: [], data: [] };
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (min === max) {
+    return { labels: [`${min.toFixed(0)}`], data: [values.length] };
+  }
+  const step = (max - min) / binCount;
+  const bins = new Array(binCount).fill(0);
+  const labels = [];
+  for (let i = 0; i < binCount; i++) {
+    const lo = min + i * step;
+    const hi = lo + step;
+    labels.push(`${lo.toFixed(0)}-${hi.toFixed(0)}`);
+  }
+  values.forEach(v => {
+    let idx = Math.min(Math.floor((v - min) / step), binCount - 1);
+    bins[idx]++;
+  });
+  return { labels, data: bins };
+}
+
+// ── UI Updates ──
+function updateRunButton() {
+  const btn = document.getElementById('runBtn');
+  btn.disabled = state.isRunning || !state.selectedProviderId || !state.prompt.trim();
+}
+
+function onConcurrencyChange(val) {
+  state.concurrency = parseInt(val);
+  document.getElementById('concurrencyDisplay').textContent = val;
+  document.getElementById('concurrencyLabel').textContent = val;
+}
+
+document.getElementById('promptInput').addEventListener('input', function() {
+  state.prompt = this.value;
+  updateRunButton();
+});
+
+document.getElementById('providerSelect').addEventListener('change', function() {
+  state.selectedProviderId = this.value;
+  document.getElementById('panelTestBtn').disabled = !state.selectedProviderId;
+  updateRunButton();
+});
+
+// ── Test Lifecycle ──
+async function startTest() {
+  if (!state.selectedProviderId) return alert('请先选择供应商');
+  if (!state.prompt.trim()) return alert('请输入测试题目');
+  if (state.isRunning) return;
+
+  state.isRunning = true;
+  state.allResults = [];
+  state.aggregateResults = null;
+  updateRunButton();
+  document.getElementById('runBtn').classList.add('hidden');
+  document.getElementById('stopBtn').classList.remove('hidden');
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('progressFill').style.width = '0%';
+  document.getElementById('progressText').textContent = '0 / ' + state.concurrency;
+  document.getElementById('summaryCards').style.display = 'none';
+  document.getElementById('chartsGrid').style.display = 'none';
+  document.getElementById('detailSection').style.display = 'none';
+  setStatus('running', '测试中...');
+
+  try {
+    const res = await fetch('/api/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider_id: state.selectedProviderId,
+        prompt: state.prompt,
+        concurrency: state.concurrency,
+      })
+    });
+    const data = await res.json();
+    state.currentTestId = data.test_id;
+
+    // SSE connection
+    state.eventSource = new EventSource(`/api/test/${state.currentTestId}/stream`);
+    state.eventSource.onmessage = handleSSEEvent;
+    state.eventSource.onerror = async () => {
+      if (state.eventSource) state.eventSource.close();
+      // fallback: try to get results directly
+      try {
+        const fallback = await fetch(`/api/test/${state.currentTestId}/results`);
+        if (fallback.ok) {
+          const fb = await fallback.json();
+          onTestComplete(fb);
+          finishTest();
+          return;
+        }
+      } catch (e) {
+        console.error('Fallback fetch failed', e);
+      }
+      showToast('error', 'SSE 连接中断，测试可能未完成');
+      finishTest();
+    };
+  } catch (e) {
+    alert('启动测试失败: ' + e.message);
+    finishTest();
+  }
+}
+
+function handleSSEEvent(event) {
+  try {
+    const data = JSON.parse(event.data);
+    switch (data.type) {
+      case 'test_start':
+        state.allResults = [];
+        break;
+      case 'request_complete':
+        state.allResults.push(data.result);
+        updateProgress(data.completed, data.total);
+        break;
+      case 'test_complete':
+        state.eventSource.close();
+        onTestComplete({ results: data.results, all_results: state.allResults });
+        finishTest();
+        break;
+      case 'error':
+        state.eventSource.close();
+        showToast('error', data.message || '测试过程发生错误');
+        finishTest();
+        break;
+    }
+  } catch (e) {
+    console.error('SSE parse error', e);
+  }
+}
+
+function updateProgress(done, total) {
+  const pct = (done / total * 100).toFixed(0);
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressText').textContent = `${done} / ${total} 完成`;
+}
+
+function onTestComplete(data) {
+  const agg = data.results;
+  state.aggregateResults = agg;
+  state.allResults = data.all_results || [];
+
+  // Show sections
+  document.getElementById('summaryCards').style.display = 'grid';
+  document.getElementById('chartsGrid').style.display = 'grid';
+  document.getElementById('detailSection').style.display = 'block';
+
+  renderHistoryCards(agg);
+  updateCharts();
+  updateDetailTable();
+  saveToHistory(agg);
+  setStatus('done', '完成');
+}
+
+function updateCharts() {
+  const results = state.allResults || [];
+  const success = results.filter(r => r.status === 'success');
+  const latencies = success.map(r => r.total_latency_ms);
+  const ttfts = success.filter(r => r.ttft_ms != null).map(r => r.ttft_ms);
+  const agg = state.aggregateResults;
+
+  // Helper to safely update a chart
+  function safeUpdate(chart, fn) {
+    if (!chart) return;
+    try { fn(chart); } catch (e) { console.error('Chart update error:', e); }
+  }
+
+  safeUpdate(state.charts.histogram, function(c) {
+    const hist = binValues(latencies, 20);
+    c.data.labels = hist.labels;
+    c.data.datasets[0].data = hist.data;
+    c.resize();
+    c.update();
+  });
+
+  safeUpdate(state.charts.percentile, function(c) {
+    if (!agg) return;
+    c.data.labels = ['平均', 'P50', 'P90', 'P95', 'P99'];
+    c.data.datasets[0].data = [
+      agg.avg_latency_ms, agg.p50_latency_ms, agg.p90_latency_ms,
+      agg.p95_latency_ms, agg.p99_latency_ms
+    ];
+    c.data.datasets[0].backgroundColor = [
+      '#6366f1', '#10b981', '#3b82f6', '#f59e0b', '#ef4444'
+    ];
+    c.resize();
+    c.update();
+  });
+
+  safeUpdate(state.charts.timeline, function(c) {
+    const successPoints = success.map(r => ({ x: r.request_id, y: r.total_latency_ms }));
+    const errors = results.filter(r => r.status !== 'success');
+    const errorPoints = errors.map(r => ({ x: r.request_id, y: r.total_latency_ms }));
+    c.data.datasets[0].data = successPoints;
+    c.data.datasets[1].data = errorPoints;
+    c.resize();
+    c.update();
+  });
+
+  safeUpdate(state.charts.ttft, function(c) {
+    if (ttfts.length > 0) {
+      const ttftHist = binValues(ttfts, Math.min(15, ttfts.length));
+      c.data.labels = ttftHist.labels;
+      c.data.datasets[0].data = ttftHist.data;
+    } else {
+      c.data.labels = ['无数据'];
+      c.data.datasets[0].data = [0];
+    }
+    c.resize();
+    c.update();
+  });
+}
+
+function sortDetailBy(key) {
+  if (state.detailSortKey === key) {
+    state.detailSortAsc = !state.detailSortAsc;
+  } else {
+    state.detailSortKey = key;
+    state.detailSortAsc = true;
+  }
+  updateDetailTable();
+}
+
+function updateDetailTable() {
+  // Sort data
+  const key = state.detailSortKey;
+  const asc = state.detailSortAsc;
+  const sorted = state.allResults.slice();
+  if (key) {
+    sorted.sort((a, b) => {
+      let va = a[key], vb = b[key];
+      // Sort nulls last (or first for desc)
+      if (va == null && vb == null) return 0;
+      if (va == null) return asc ? 1 : -1;
+      if (vb == null) return asc ? -1 : 1;
+      if (typeof va === 'string') va = va.toLowerCase();
+      if (typeof vb === 'string') vb = vb.toLowerCase();
+      if (va < vb) return asc ? -1 : 1;
+      if (va > vb) return asc ? 1 : -1;
+      return 0;
+    });
+  }
+
+  // Update header sort indicators
+  const thMap = { request_id: 'thReqId', total_latency_ms: 'thLatency', ttft_ms: 'thTTFT', token_count: 'thTokens' };
+  Object.entries(thMap).forEach(([k, id]) => {
+    const th = document.getElementById(id);
+    if (!th) return;
+    th.classList.toggle('sorted', state.detailSortKey === k);
+    const arrow = th.querySelector('.sort-arrow');
+    if (arrow) arrow.textContent = (state.detailSortKey === k) ? (state.detailSortAsc ? '▲' : '▼') : '';
+  });
+
+  const tbody = document.getElementById('detailTbody');
+  tbody.innerHTML = sorted.map(r => `
+    <tr>
+      <td>${r.request_id}</td>
+      <td><span class="badge ${r.status === 'success' ? 'badge-success' : 'badge-error'}">${r.status === 'success' ? '成功' : '失败'}</span></td>
+      <td>${r.total_latency_ms.toFixed(0)} ms</td>
+      <td>${r.ttft_ms != null ? r.ttft_ms.toFixed(0) + ' ms' : '-'}</td>
+      <td>${r.token_count || '-'}</td>
+      <td>${r.start_time_iso || '-'}</td>
+      <td style="color:var(--error);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.error_message || ''}">${r.error_message || ''}</td>
+    </tr>
+  `).join('');
+}
+
+function toggleDetailTable() {
+  const wrap = document.getElementById('detailTableWrap');
+  const arrow = document.getElementById('detailArrow');
+  if (wrap.style.display === 'none') {
+    wrap.style.display = 'block';
+    arrow.textContent = '▼';
+  } else {
+    wrap.style.display = 'none';
+    arrow.textContent = '▶';
+  }
+}
+
+function stopTest() {
+  if (state.eventSource) {
+    state.eventSource.close();
+  }
+  if (state._optEventSource) {
+    state._optEventSource.close();
+    state._optEventSource = null;
+    document.getElementById('optRunBtn').disabled = !document.getElementById('optProviderSelect').value;
+    document.getElementById('optProgressText').textContent = '已停止';
+    setStatus('idle', '就绪');
+  }
+  finishTest();
+}
+
+function finishTest() {
+  state.isRunning = false;
+  state.eventSource = null;
+  document.getElementById('runBtn').classList.remove('hidden');
+  document.getElementById('stopBtn').classList.add('hidden');
+  setStatus('idle', '就绪');
+  updateRunButton();
+}
+
+function setStatus(mode, text) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot';
+  if (mode === 'running') dot.classList.add('running');
+  if (mode === 'done') dot.classList.add('done');
+  if (mode === 'idle') { /* default class only */ }
+  document.getElementById('statusText').textContent = text;
+}
+
+// ── Provider Management ──
+function openProviderModal() {
+  document.getElementById('providerModal').classList.add('active');
+  renderProviderList();
+  resetProviderForm();
+}
+
+function closeProviderModal() {
+  document.getElementById('providerModal').classList.remove('active');
+  state.editingProviderId = null;
+}
+
+function renderProviderList() {
+  const list = document.getElementById('providerList');
+  list.innerHTML = state.providers.map(p => `
+    <div class="provider-item ${state.editingProviderId === p.id ? 'active' : ''}" onclick="editProvider('${p.id}')">
+      <div>
+        <div class="provider-item-name">${escHtml(p.name)}</div>
+        <div class="provider-item-model">${escHtml(p.model)} · ${escHtml(p.api_base)}</div>
+      </div>
+      <button class="provider-item-delete" onclick="event.stopPropagation(); deleteProviderConfirm('${p.id}')" title="删除">×</button>
+    </div>
+  `).join('');
+}
+
+function newProviderForm() {
+  state.editingProviderId = null;
+  document.getElementById('pfName').value = '';
+  document.getElementById('pfBase').value = 'https://api.openai.com/v1';
+  document.getElementById('pfKey').value = '';
+  document.getElementById('pfKey').placeholder = '留空则不发送 Authorization';
+  document.getElementById('pfModel').value = '';
+  document.getElementById('pfMaxTokens').value = 512;
+  document.getElementById('pfTemp').value = '0.0';
+  document.getElementById('pfHeaders').value = '';
+  document.getElementById('pfBody').value = '';
+  document.getElementById('providerForm').style.display = 'flex';
+  document.getElementById('modalFooter').style.display = 'flex';
+  document.getElementById('modalDeleteBtn').style.display = 'none';
+  renderProviderList();
+}
+
+function editProvider(id) {
+  const p = state.providers.find(x => x.id === id);
+  if (!p) return;
+  state.editingProviderId = id;
+  document.getElementById('pfName').value = p.name || '';
+  document.getElementById('pfBase').value = p.api_base || '';
+  // Don't populate masked key — leave empty means "keep existing"
+  document.getElementById('pfKey').value = '';
+  document.getElementById('pfKey').placeholder = '留空则保留原密钥，输入新值则更新';
+  document.getElementById('pfModel').value = p.model || '';
+  document.getElementById('pfMaxTokens').value = p.max_tokens || 512;
+  document.getElementById('pfTemp').value = p.temperature != null ? p.temperature : 0.0;
+  document.getElementById('pfHeaders').value = p.extra_headers ? JSON.stringify(p.extra_headers) : '';
+  document.getElementById('pfBody').value = p.extra_body ? JSON.stringify(p.extra_body) : '';
+  document.getElementById('providerForm').style.display = 'flex';
+  document.getElementById('modalFooter').style.display = 'flex';
+  document.getElementById('modalDeleteBtn').style.display = 'block';
+  renderProviderList();
+}
+
+function resetProviderForm() {
+  document.getElementById('providerForm').style.display = 'none';
+  document.getElementById('modalFooter').style.display = 'none';
+  state.editingProviderId = null;
+}
+
+async function saveCurrentProvider() {
+  const name = document.getElementById('pfName').value.trim();
+  const api_base = document.getElementById('pfBase').value.trim();
+  const api_key = document.getElementById('pfKey').value.trim();
+  const model = document.getElementById('pfModel').value.trim();
+
+  if (!name || !api_base || !model) {
+    return alert('请填写所有必填字段（名称、API Base、模型名称）');
+  }
+
+  let extra_headers = {};
+  let extra_body = {};
+  try {
+    const h = document.getElementById('pfHeaders').value.trim();
+    if (h) extra_headers = JSON.parse(h);
+  } catch (e) { return alert('额外 Headers JSON 格式错误'); }
+  try {
+    const b = document.getElementById('pfBody').value.trim();
+    if (b) extra_body = JSON.parse(b);
+  } catch (e) { return alert('额外 Body JSON 格式错误'); }
+
+  const payload = {
+    name, api_base, api_key, model,
+    max_tokens: parseInt(document.getElementById('pfMaxTokens').value) || 512,
+    temperature: parseFloat(document.getElementById('pfTemp').value) || 0.0,
+    extra_headers, extra_body,
+  };
+
+  try {
+    if (state.editingProviderId) {
+      await fetch(`/api/providers/${state.editingProviderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } else {
+      await fetch('/api/providers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    }
+    await loadProviders();
+    resetProviderForm();
+    // Update main select
+    if (state.providers.length > 0 && !state.selectedProviderId) {
+      state.selectedProviderId = state.providers[0].id;
+      document.getElementById('providerSelect').value = state.selectedProviderId;
+      updateRunButton();
+    }
+  } catch (e) {
+    alert('保存失败: ' + e.message);
+  }
+}
+
+async function deleteCurrentProvider() {
+  if (!state.editingProviderId) return;
+  await deleteProviderConfirm(state.editingProviderId);
+}
+
+async function deleteProviderConfirm(id) {
+  if (!confirm('确定要删除这个供应商吗？')) return;
+  try {
+    await fetch(`/api/providers/${id}`, { method: 'DELETE' });
+    if (state.selectedProviderId === id) {
+      state.selectedProviderId = null;
+      document.getElementById('providerSelect').value = '';
+    }
+    if (state.editingProviderId === id) {
+      resetProviderForm();
+    }
+    await loadProviders();
+    updateRunButton();
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
+async function testConnection(config, source = 'modal') {
+  const btn = document.getElementById(source === 'panel' ? 'panelTestBtn' : 'modalTestBtn');
+  const origText = btn.textContent;
+  btn.textContent = '⏳ 测试中...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/test-connection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    const result = await res.json();
+    if (result.success) {
+      showToast('success', `连接成功！延迟 ${result.latency_ms}ms，模型: ${result.model}`);
+    } else {
+      showToast('error', `连接失败: ${result.error}${result.detail ? ' — ' + result.detail : ''}`);
+    }
+  } catch (e) {
+    showToast('error', '测试请求失败: ' + e.message);
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = source === 'panel' ? !state.selectedProviderId : false;
+  }
+}
+
+function getFormConfig() {
+  const name = document.getElementById('pfName').value.trim();
+  const api_base = document.getElementById('pfBase').value.trim();
+  const api_key = document.getElementById('pfKey').value.trim();
+  const model = document.getElementById('pfModel').value.trim();
+  if (!name || !api_base || !model) {
+    alert('请先填写名称、API Base 和模型名称再测试连接');
+    return null;
+  }
+  let extra_headers = {};
+  let extra_body = {};
+  try {
+    const h = document.getElementById('pfHeaders').value.trim();
+    if (h) extra_headers = JSON.parse(h);
+  } catch (e) { alert('额外 Headers JSON 格式错误'); return null; }
+  try {
+    const b = document.getElementById('pfBody').value.trim();
+    if (b) extra_body = JSON.parse(b);
+  } catch (e) { alert('额外 Body JSON 格式错误'); return null; }
+
+  return {
+    name, api_base, api_key, model,
+    max_tokens: parseInt(document.getElementById('pfMaxTokens').value) || 512,
+    temperature: parseFloat(document.getElementById('pfTemp').value) || 0.0,
+    extra_headers, extra_body,
+  };
+}
+
+function testConnectionFromForm() {
+  const config = getFormConfig();
+  if (config) testConnection(config, 'modal');
+}
+
+async function testConnectionFromPanel() {
+  if (!state.selectedProviderId) {
+    alert('请先选择一个供应商');
+    return;
+  }
+  const btn = document.getElementById('panelTestBtn');
+  btn.textContent = '⏳ 测试中...';
+  btn.disabled = true;
+
+  try {
+    // Use provider_id so the backend uses the real (unmasked) API key
+    const res = await fetch(`/api/providers/${state.selectedProviderId}/test-connection`, {
+      method: 'POST',
+    });
+    const result = await res.json();
+    if (result.success) {
+      showToast('success', `连接成功！延迟 ${result.latency_ms}ms，模型: ${result.model}，回复: ${result.preview || '...'}`);
+    } else {
+      showToast('error', `连接失败: ${result.error}${result.detail ? ' — ' + result.detail : ''}`);
+    }
+  } catch (e) {
+    showToast('error', '测试请求失败: ' + e.message);
+  } finally {
+    btn.textContent = '🔌 测试连接';
+    btn.disabled = false;
+  }
+}
+
+function showToast(type, message) {
+  let toast = document.getElementById('toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toast';
+    toast.style.cssText = `
+      position: fixed; top: 16px; right: 16px; z-index: 200;
+      max-width: 420px; padding: 12px 18px; border-radius: var(--radius);
+      font-size: 13px; font-weight: 500; line-height: 1.4;
+      transition: all 0.3s ease; opacity: 0; transform: translateY(-8px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    `;
+    document.body.appendChild(toast);
+  }
+  toast.className = '';
+  if (type === 'success') {
+    toast.style.background = 'var(--success-bg)';
+    toast.style.border = '1px solid var(--success)';
+    toast.style.color = 'var(--success)';
+  } else {
+    toast.style.background = 'var(--error-bg)';
+    toast.style.border = '1px solid var(--error)';
+    toast.style.color = 'var(--error)';
+  }
+  toast.textContent = message;
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateY(0)';
+  clearTimeout(toast._timeout);
+  toast._timeout = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-8px)';
+  }, 5000);
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── History ──
+function saveToHistory(agg) {
+  // Store full results for chart replay
+  const entry = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    seq: 0,
+    time: new Date().toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    fullTime: new Date().toISOString(),
+    concurrency: agg.concurrency,
+    total: agg.total_requests,
+    successRate: agg.success_rate,
+    avgLatency: agg.avg_latency_ms,
+    p95Latency: agg.p95_latency_ms,
+    avgTtft: agg.avg_ttft_ms,
+    prompt: agg.prompt,
+    model: agg.model,
+    provider: agg.provider_name,
+    // Full data for chart replay
+    aggregateResults: agg,
+    allResults: state.allResults.slice(),
+  };
+  state.history.unshift(entry);
+  state.history.forEach((h, i) => h.seq = i + 1);
+  if (state.history.length > 20) state.history = state.history.slice(0, 20);
+  persistHistory();
+  renderHistory();
+}
+
+function persistHistory() {
+  try {
+    localStorage.setItem('llmtest_history', JSON.stringify(state.history));
+  } catch (e) {
+    // Quota exceeded — trim older entries and retry
+    if (state.history.length > 5) {
+      state.history = state.history.slice(0, 5);
+      try { localStorage.setItem('llmtest_history', JSON.stringify(state.history)); } catch (_) {}
+    }
+  }
+}
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem('llmtest_history');
+    if (raw) state.history = JSON.parse(raw);
+  } catch (e) { state.history = []; }
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  if (state.history.length === 0) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:8px 0;">暂无记录</div>';
+    return;
+  }
+  list.innerHTML = state.history.map(h => {
+    const avg = (typeof h.avgLatency === 'number') ? h.avgLatency.toFixed(0) : '?';
+    const rate = (typeof h.successRate === 'number') ? h.successRate : '?';
+    return `
+    <div class="history-item" onclick="viewHistory('${h.id}')" title="${escHtml(h.prompt || '')}">
+      <span class="history-seq">#${h.seq}</span>
+      <span class="history-time">${h.time}</span>
+      <span class="history-summary">
+        并发<span>${h.concurrency || '?'}</span> ·
+        成功率<span>${rate}%</span> ·
+        平均<span>${avg}ms</span>
+      </span>
+      <button class="history-delete" onclick="event.stopPropagation(); deleteHistory('${h.id}')" title="删除">×</button>
+    </div>
+  `}).join('');
+}
+
+function deleteHistory(id) {
+  state.history = state.history.filter(h => h.id !== id);
+  state.history.forEach((h, i) => h.seq = i + 1);
+  persistHistory();
+  renderHistory();
+}
+
+function viewHistory(id) {
+  const h = state.history.find(x => x.id === id);
+  if (!h) return;
+
+  // Validate: must have full aggregate data to replay
+  if (!h.aggregateResults || !h.aggregateResults.test_duration_ms) {
+    showToast('error', '该历史记录缺少完整测试数据，无法回放（可能是旧版本记录）');
+    return;
+  }
+
+  // Restore full test results into state
+  state.aggregateResults = h.aggregateResults;
+  state.allResults = Array.isArray(h.allResults) ? h.allResults : [];
+  // Also load the prompt and concurrency into inputs
+  document.getElementById('concurrencySlider').value = h.concurrency;
+  onConcurrencyChange(h.concurrency);
+  document.getElementById('promptInput').value = h.prompt || '';
+  state.prompt = h.prompt || '';
+  updateRunButton();
+
+  // Show all result sections
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('summaryCards').style.display = 'grid';
+  document.getElementById('chartsGrid').style.display = 'grid';
+  document.getElementById('detailSection').style.display = 'block';
+
+  try {
+    renderHistoryCards(h.aggregateResults);
+  } catch (e) {
+    console.error('renderHistoryCards error:', e);
+    showToast('error', '渲染摘要卡片失败');
+  }
+  try {
+    updateCharts();
+  } catch (e) {
+    console.error('updateCharts error:', e);
+    showToast('error', '更新图表失败');
+  }
+  try {
+    updateDetailTable();
+  } catch (e) {
+    console.error('updateDetailTable error:', e);
+  }
+  setStatus('done', '历史回放');
+  showToast('success', `已加载 #${h.seq} (${h.time}) — 完整图表已恢复`);
+}
+
+// Separate card renderer so viewHistory can call it without re-parsing SSE data
+function renderHistoryCards(agg) {
+  if (!agg || !agg.test_duration_ms) {
+    console.error('renderHistoryCards: invalid aggregate data', agg);
+    return;
+  }
+  const cards = document.getElementById('summaryCards');
+  cards.innerHTML = `
+    <div class="metric-card card-accent">
+      <div class="metric-label">测试时长</div>
+      <div class="metric-value">${(agg.test_duration_ms / 1000).toFixed(2)}s</div>
+      <div class="metric-sub">并发: ${agg.concurrency}</div>
+    </div>
+    <div class="metric-card card-success">
+      <div class="metric-label">成功率</div>
+      <div class="metric-value">${agg.success_rate}%</div>
+      <div class="metric-sub">${agg.success_count} / ${agg.total_requests} 成功</div>
+    </div>
+    <div class="metric-card card-info">
+      <div class="metric-label">平均延迟</div>
+      <div class="metric-value">${agg.avg_latency_ms.toFixed(0)}<span style="font-size:13px;font-weight:400">ms</span></div>
+      <div class="metric-sub">最小 ${agg.min_latency_ms.toFixed(0)} / 最大 ${agg.max_latency_ms.toFixed(0)} ms</div>
+    </div>
+    <div class="metric-card card-warning">
+      <div class="metric-label">P95 延迟</div>
+      <div class="metric-value">${agg.p95_latency_ms.toFixed(0)}<span style="font-size:13px;font-weight:400">ms</span></div>
+      <div class="metric-sub">P90: ${agg.p90_latency_ms.toFixed(0)} / P99: ${agg.p99_latency_ms.toFixed(0)} ms</div>
+    </div>
+    <div class="metric-card card-accent">
+      <div class="metric-label">平均首字延迟</div>
+      <div class="metric-value">${agg.avg_ttft_ms != null ? agg.avg_ttft_ms.toFixed(0) + '<span style="font-size:13px;font-weight:400">ms</span>' : 'N/A'}</div>
+      <div class="metric-sub">${agg.min_ttft_ms != null ? '最小 ' + agg.min_ttft_ms.toFixed(0) + ' / 最大 ' + agg.max_ttft_ms.toFixed(0) + ' ms' : ''}</div>
+    </div>
+    <div class="metric-card card-info">
+      <div class="metric-label">模型 / 供应商</div>
+      <div class="metric-value" style="font-size:15px;">${agg.model || ''}</div>
+      <div class="metric-sub">${agg.provider_name || ''}</div>
+    </div>
+  `;
+}
+
+// ── Bootstrap ──
+initApp();
+</script>
+</body>
+</html>

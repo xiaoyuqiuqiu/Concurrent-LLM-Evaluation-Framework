@@ -1,0 +1,14 @@
+{
+  "providers": {
+    "b6fd3e4e-589e-476a-a152-fe43c5df50ec": {
+      "name": "LLM",
+      "api_base": "http://127.0.0.1:1234/v1",
+      "api_key": "1",
+      "model": "unsloth/gpt-oss-20b",
+      "max_tokens": 5120,
+      "temperature": 0.0,
+      "extra_headers": {},
+      "extra_body": {}
+    }
+  }
+}

@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Project
+.claude/
+*.jsonl
+
+# Keep providers_config.json if template needed, but ignore local secrets
+# providers_config.json
